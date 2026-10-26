@@ -1,0 +1,6 @@
+services:
+  fiora-bot:
+    build:
+      context: .
+      args:
+        INSTALL_FFMPEG: ${INSTALL_FFMPEG:-false}

@@ -25,12 +25,10 @@ Fiora 主站负责账号、会话授权、消息存储及广播。机器人负�
 git clone https://github.com/Ichinose520122/fiora-bot.git
 cd fiora-bot
 cp .env.example .env
-mkdir -p data
-sudo chown 1000:1000 data
-chmod 700 data
+sudo sh scripts/prepare-docker.sh
 ```
 
-在 `.env` 填写 `FIORA_URL`、`FIORA_BOT_KEY`、`MODEL_API_BASE_URL`、`MODEL_API_KEY` 和 `MODEL_NAME`，然后启动：
+`.env` 仅保存端口、时区等部署参数。启动后在网页管理界面配置 Fiora 站点、机器人 API Key、模型服务地址、模型密钥和模型名称：
 
 ```sh
 docker compose pull
@@ -40,7 +38,19 @@ docker compose logs --tail=100 -f fiora-bot
 
 镜像位于 `ghcr.io/ichinose520122/fiora-bot:latest`。若 GHCR 包尚未设为公开，需要先登录有读取权限的 GitHub 账户，或使用下方的源码构建方式。
 
-容器以 UID/GID `1000:1000` 运行。`data` 为宿主机持久化目录；`plugins` 和 `skills` 使用 Compose 具名卷保存安装、卸载和自定义扩展。首次创建扩展卷时会填入镜像自带扩展；后续镜像升级不会覆盖已有扩展卷，应按需单独更新扩展。
+容器以 UID/GID `1000:1000` 运行，使用以下宿主机目录：
+
+| 宿主机目录 | 容器目录 | 内容 |
+| --- | --- | --- |
+| `./data` | `/app/data` | 配置、人设、记忆、存档、用量和日志 |
+| `./plugins` | `/app/plugins` | 插件，每个插件独立子目录 |
+| `./skills` | `/app/skills` | 技能，每个技能独立子目录 |
+
+部署目录为 `/opt/fiora-bot` 时，插件放入 `/opt/fiora-bot/plugins/<id>/`，技能放入 `/opt/fiora-bot/skills/<id>/`。控制台安装的扩展也写入这两个目录。新增或删除扩展后可在控制台刷新扩展列表；热重载开启时会自动加载。
+
+`prepare-docker.sh` 初始化三个目录及其写入权限。扩展目录为空时，优先从当前部署的旧容器迁移；没有旧容器则从镜像提取内置扩展。已有主机扩展目录不会被覆盖。上传新扩展后，应确保其归属和目录写入权限允许 UID/GID `1000:1000` 访问。
+
+镜像升级不会覆盖挂载目录中的扩展，内置扩展与自定义扩展均单独维护。
 
 控制台仅发布到服务器本机 `127.0.0.1:3220`。在自己的电脑建立 SSH 转发：
 
@@ -53,16 +63,32 @@ ssh -N -L 13220:127.0.0.1:3220 user@server
 ### 源码构建
 
 ```sh
-docker compose up -d --build
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
-基础镜像不包含 `ffmpeg`，文字和基础图片收发可直接运行。需要视频处理、GIF 转换或图片压缩时，在 `.env` 设置 `INSTALL_FFMPEG=true` 后重新源码构建。
+默认 `compose.yaml` 只运行镜像，不要求服务器存在 Dockerfile。`compose.build.yaml` 提供源码构建选项。基础镜像不包含 `ffmpeg`，文字和基础图片收发可直接运行。需要视频处理、GIF 转换或图片压缩时，在 `.env` 设置 `INSTALL_FFMPEG=true`，使用上述构建命令。
+
+### 与同机 Fiora 使用共享网络
+
+主站使用 `caddy-proxy` 时，可复制网络覆盖文件，使普通 Compose 命令自动加载它：
+
+```sh
+cp compose.fiora-network.yaml compose.override.yaml
+docker compose config --quiet
+docker compose up -d
+```
+
+实际网络名称可通过 `.env` 的 `FIORA_DOCKER_NETWORK` 修改。该网络须已存在。连接共享网络后，机器人容器可访问 `http://fiora:9200`；当前图片链接仍复用站点地址，使用内部站点地址时还需考虑控制台预览和图片下载的可达性及地址校验。
 
 ### 迁移便携版数据
 
-先停止原机器人，将原 `data` 目录整体复制到仓库的 `data`，再调整该目录及其内容归属为 `1000:1000`。原有配置、人设、存档、记忆和扩展状态保留；自定义的扩展源码需要同时迁移到相应扩展卷。避免两个实例使用同一账号同时自动回复。
+先停止原机器人，将原 `data` 目录整体复制到仓库的 `data`，再调整该目录及其内容归属为 `1000:1000`。原有配置、人设、存档、记忆和扩展状态保留；自定义扩展源码分别放入 `plugins` 和 `skills`。避免两个实例使用同一账号同时自动回复。
 
-非空环境变量优先于配置文件；迁移时需删除 `.env` 中不希望覆盖旧配置的示例值。运行时保存设置可能将环境变量的生效值写入 `data/config.json`，配置文件及 `.env` 均按凭据管理，不应提交到仓库。
+默认 Compose 不向应用传入站点和模型环境变量，管理界面保存的设置直接生效并持久化到 `data/config.json`。连接参数修改后需要重启机器人。
+
+从旧版命名卷升级时，先停止机器人并备份配置、数据及扩展。保留旧容器，更新 Compose 后运行 `prepare-docker.sh`，脚本会在目标扩展目录为空时从旧容器复制扩展。旧命名卷不会被删除。原来通过环境变量设置的密钥和连接参数，需要在移除这些变量前保存到管理配置中。
+
+直接运行容器时仍支持下表中的可选环境变量，非空值优先于配置文件，并可能随保存操作写入配置。配置文件和环境变量文件不应提交到仓库。
 
 ## 配置
 
@@ -78,6 +104,7 @@ docker compose up -d --build
 | `QQ_AGENT_HOST` | 控制台监听地址；本地默认 `127.0.0.1`，镜像内为 `0.0.0.0` |
 | `QQ_AGENT_PORT` | 程序监听端口，镜像内为 `3220` |
 | `CONSOLE_PORT` | Compose 在服务器本机发布的控制台端口 |
+| `FIORA_DOCKER_NETWORK` | 可选网络覆盖文件使用的既有共享网络名称 |
 | `TZ` | 时区，默认 `Asia/Shanghai` |
 | `QQ_AGENT_TELEMETRY` | 可选，设为 `1` 才启用上游匿名用量上报；默认关闭 |
 

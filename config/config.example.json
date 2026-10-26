@@ -1,6 +1,6 @@
 {
   "fiora": { "enabled": true, "url": "", "apiKey": "" },
-  "api": { "baseUrl": "https://api.deepseek.com/v1", "apiKey": "", "model": "deepseek-chat" },
+  "api": { "baseUrl": "", "apiKey": "", "model": "" },
   "server": { "host": "127.0.0.1", "port": 3220 },
   "allow": { "groups": [], "private": [] }
 }

@@ -1,0 +1,10 @@
+services:
+  fiora-bot:
+    networks:
+      - default
+      - caddy-proxy
+
+networks:
+  caddy-proxy:
+    external: true
+    name: ${FIORA_DOCKER_NETWORK:-caddy-proxy}

@@ -10,6 +10,8 @@ community.key
 !pnpm-lock.yaml
 runtime/
 coverage/
+backups/
+compose.override.yaml
 *.zip
 *.tar
 *.exe

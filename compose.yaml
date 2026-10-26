@@ -1,10 +1,6 @@
 services:
   fiora-bot:
     image: ghcr.io/ichinose520122/fiora-bot:latest
-    build:
-      context: .
-      args:
-        INSTALL_FFMPEG: ${INSTALL_FFMPEG:-false}
     init: true
     restart: unless-stopped
     stop_grace_period: 30s
@@ -12,21 +8,12 @@ services:
       - "127.0.0.1:${CONSOLE_PORT:-3220}:3220"
     environment:
       TZ: ${TZ:-Asia/Shanghai}
-      FIORA_URL: ${FIORA_URL:-}
-      FIORA_BOT_KEY: ${FIORA_BOT_KEY:-}
-      MODEL_API_BASE_URL: ${MODEL_API_BASE_URL:-}
-      MODEL_API_KEY: ${MODEL_API_KEY:-}
-      MODEL_NAME: ${MODEL_NAME:-}
     volumes:
       - ./data:/app/data
-      - plugins:/app/plugins
-      - skills:/app/skills
+      - ./plugins:/app/plugins
+      - ./skills:/app/skills
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  plugins:
-  skills:

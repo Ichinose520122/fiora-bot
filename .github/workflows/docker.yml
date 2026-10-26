@@ -53,27 +53,35 @@ jobs:
             ghcr.io/ichinose520122/fiora-bot:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Check startup, persistent configuration and graceful shutdown
+      - name: Check host bind mounts, startup, persistence and graceful shutdown
         run: |
           image=ghcr.io/ichinose520122/fiora-bot:latest
           docker run --rm --entrypoint node "$image" -p 'process.version'
-          docker volume create fiora-bot-smoke-data
+          deploy="$RUNNER_TEMP/fiora-bot-smoke"
+          mkdir -p "$deploy/scripts"
+          cp compose.yaml "$deploy/compose.yaml"
+          cp scripts/prepare-docker.sh "$deploy/scripts/prepare-docker.sh"
+          sudo sh "$deploy/scripts/prepare-docker.sh"
+          docker compose -p fiora-bot-smoke -f "$deploy/compose.yaml" config --quiet
           for pass in 1 2; do
-            docker run -d --name fiora-bot-smoke -v fiora-bot-smoke-data:/app/data -p 127.0.0.1:3220:3220 "$image"
+            docker compose -p fiora-bot-smoke -f "$deploy/compose.yaml" up -d --no-build --pull never
+            container=fiora-bot-smoke-fiora-bot-1
             ready=false
             for attempt in $(seq 1 30); do
-              if docker exec fiora-bot-smoke node scripts/healthcheck.mjs; then ready=true; break; fi
+              if docker exec "$container" node scripts/healthcheck.mjs; then ready=true; break; fi
               sleep 1
             done
             test "$ready" = true
+            test "$(docker inspect --format '{{(index (index .HostConfig.PortBindings "3220/tcp") 0).HostIp}}' "$container")" = 127.0.0.1
+            docker exec "$container" node -e "const fs=require('fs'); for(const p of ['/app/data','/app/plugins','/app/skills'])fs.accessSync(p,fs.constants.W_OK); if(!fs.existsSync('/app/plugins/extension-manager/plugin.json')||!fs.existsSync('/app/skills/whale-memes/skill.json'))process.exit(1);"
             if [ "$pass" = 1 ]; then
-              docker exec fiora-bot-smoke node -e "const fs=require('fs'),p='/app/data/config.json',c=JSON.parse(fs.readFileSync(p)); c.smokeMarker='persistent'; fs.writeFileSync(p,JSON.stringify(c));"
+              docker exec "$container" node -e "const fs=require('fs'),p='/app/data/config.json',c=JSON.parse(fs.readFileSync(p)); if(c.api.apiKey||c.api.model||c.api.baseUrl)process.exit(1); c.smokeMarker='persistent'; fs.writeFileSync(p,JSON.stringify(c));"
             else
-              docker exec fiora-bot-smoke node -e "const c=require('/app/data/config.json'); if(c.smokeMarker!=='persistent')process.exit(1);"
+              docker exec "$container" node -e "const c=require('/app/data/config.json'); if(c.smokeMarker!=='persistent')process.exit(1);"
             fi
-            docker stop --time 30 fiora-bot-smoke
-            test "$(docker inspect --format '{{.State.ExitCode}}' fiora-bot-smoke)" = 0
-            docker rm fiora-bot-smoke
+            docker stop --time 30 "$container"
+            test "$(docker inspect --format '{{.State.ExitCode}}' "$container")" = 0
+            docker compose -p fiora-bot-smoke -f "$deploy/compose.yaml" rm -f
           done
       - name: Publish verified image
         run: |
@@ -81,9 +89,8 @@ jobs:
           docker push ghcr.io/ichinose520122/fiora-bot:sha-${{ github.sha }}
       - name: Show container logs on failure
         if: failure()
-        run: docker logs fiora-bot-smoke || true
+        run: docker logs fiora-bot-smoke-fiora-bot-1 || true
       - name: Clean up smoke test
         if: always()
         run: |
-          docker rm -f fiora-bot-smoke || true
-          docker volume rm fiora-bot-smoke-data || true
+          docker compose -p fiora-bot-smoke -f "$RUNNER_TEMP/fiora-bot-smoke/compose.yaml" down || true
