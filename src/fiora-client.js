@@ -51,7 +51,7 @@ export class FioraClient {
 
   #setStatus(connected, error = '') {
     this.connected = connected;
-    if (connected) this.everConnected = true;
+    if (connected) { this.everConnected = true; this.lastConnectError = ''; }
     if (error) this.lastConnectError = error;
     for (const fn of this.statusListeners) {
       try { fn({ connected, everConnected: this.everConnected, error: this.lastConnectError }); } catch {}
@@ -92,10 +92,11 @@ export class FioraClient {
     this.#closedByUs = true;
     if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
     if (this.#pingTimer) clearInterval(this.#pingTimer);
-    if (this.socket) {
-      try { this.socket.close(); } catch {}
-      this.socket = null;
-    }
+    this.#reconnectTimer = null;
+    this.#pingTimer = null;
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) { try { socket.close(); } catch {} }
     this.#setStatus(false);
   }
 
@@ -108,6 +109,7 @@ export class FioraClient {
 
   #openSocket() {
     if (this.#closedByUs) return;
+    if (this.socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(this.socket.readyState)) return;
     if (!this.siteUrl || !this.apiKey) {
       this.log('[Fiora] 未配置 Fiora 站点地址或 API Key');
       this.#setStatus(false, '未配置站点地址或 API Key');
@@ -138,22 +140,24 @@ export class FioraClient {
       return;
     }
 
-    this.socket.on('open', () => {
+    const socket = this.socket;
+    socket.on('open', () => {
+      if (this.socket !== socket || this.#closedByUs) return;
       this.#failedAttempts = 0;
-      this.#setStatus(true);
-      this.log('[Fiora] WebSocket 连接成功！大肥鱼已在 Fiora 网页端上线（绿灯点亮）');
+      this.log('[Fiora] WebSocket 已建立，等待服务器确认身份和在线状态');
 
       // Start ping heartbeat
       if (this.#pingTimer) clearInterval(this.#pingTimer);
       this.#pingTimer = setInterval(() => {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-          this.socket.send(JSON.stringify({ type: 'ping' }));
+        if (this.socket === socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'ping' }));
         }
       }, 30000);
       this.#pingTimer.unref?.();
     });
 
-    this.socket.on('message', (raw) => {
+    socket.on('message', (raw) => {
+      if (this.socket !== socket || this.#closedByUs) return;
       let data;
       try {
         data = JSON.parse(raw.toString());
@@ -170,6 +174,7 @@ export class FioraClient {
         this.allowedGroupIds = data.scope?.allowedGroupIds || [];
         this.allowPrivate = !!data.scope?.allowPrivate;
         this.conversationCache = null;
+        this.#setStatus(true);
         this.log(`[Fiora] 身份初始化完成: ${this.selfNickname} (${this.selfId})，授权群数: ${this.allowedGroupIds.length}`);
         return;
       }
@@ -215,17 +220,23 @@ export class FioraClient {
       }
     });
 
-    this.socket.on('close', (code, reason) => {
+    socket.on('close', (code, reason) => {
+      if (this.socket !== socket || this.#closedByUs) return;
       this.#handleDisconnect(`连接关闭 (${code}: ${reason || '未知'})`);
     });
 
-    this.socket.on('error', (err) => {
+    socket.on('error', (err) => {
+      if (this.socket !== socket || this.#closedByUs) return;
       this.#handleDisconnect(err.message || '网络错误');
     });
   }
 
   #handleDisconnect(reason) {
     if (this.#pingTimer) clearInterval(this.#pingTimer);
+    this.#pingTimer = null;
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) { try { socket.terminate(); } catch {} }
     this.#setStatus(false, reason);
     if (this.#closedByUs) return;
 
