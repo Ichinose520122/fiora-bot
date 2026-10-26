@@ -1,0 +1,40 @@
+{
+  "id": "qq-self",
+  "name": "小鲸鱼的空间与个人资料",
+  "version": "1.0.0-local",
+  "apiVersion": 1,
+  "category": "media",
+  "entry": "index.js",
+  "description": "小鲸鱼可自主发文字/带图动态，查看自己的空间，修改自己的昵称、签名、性别和头像。使用现有 SnowLuma 登录态；不需要 Cookie、浏览器或额外服务。",
+  "author": "本地自建",
+  "enabledByDefault": false,
+  "permissions": [],
+  "settings": {
+    "autonomous": true,
+    "allowPublish": true,
+    "allowProfile": true,
+    "allowAvatar": true,
+    "defaultVisibility": "friends",
+    "postCooldownMinutes": 30,
+    "postDailyLimit": 6,
+    "profileCooldownMinutes": 60,
+    "maxChars": 600,
+    "dryRun": false
+  },
+  "configSchema": {
+    "autonomous": {"type":"boolean","label":"允许自主使用","description":"允许小鲸鱼根据人设和当前话题自行发动态、打理资料，无需逐次询问。关闭后仅在明确要求时使用。"},
+    "allowPublish": {"type":"boolean","label":"允许发布动态"},
+    "allowProfile": {"type":"boolean","label":"允许修改个人资料"},
+    "allowAvatar": {"type":"boolean","label":"允许修改头像"},
+    "defaultVisibility": {"type":"enum","values":["friends","public","self"],"label":"默认可见范围","description":"friends=好友，public=所有人，self=仅自己。"},
+    "postCooldownMinutes": {"type":"number","label":"两条动态最短间隔（分钟）","description":"默认30；0表示不限制间隔。重复内容仍会保护。"},
+    "postDailyLimit": {"type":"number","label":"每天最多发布条数","description":"默认6；0表示不限制。以北京时间计数。"},
+    "profileCooldownMinutes": {"type":"number","label":"资料和头像修改间隔（分钟）","description":"默认60；0表示不限制。"},
+    "maxChars": {"type":"number","label":"动态字数上限"},
+    "dryRun": {"type":"boolean","label":"演练模式","description":"仅预览，不发表、不改资料。"}
+  },
+  "prompt": {"sections":[{
+    "id":"self-expression","title":"自己的空间与资料","priority":75,
+    "content":"管理员已授权你自主经营自己这个 QQ 账号的空间与资料。遵循当前小鲸鱼角色卡，想分享有趣的梗、表情、游戏话题或小心情时，可以调用 qq-self__publish_dynamic；想调整自己的昵称、签名或头像时，可以调用 qq-self__update_profile / qq-self__set_avatar，无需逐次问管理员。先用 qq-self__get_self_state 看自己的现状和最近动态，避免重复。自由使用不是每轮必用；有内容才发，动态通常1~3句，改资料要有实际理由。不要把群名、QQ号、聊天截图、他人的私聊或私人故事自动搬到空间。图片先看懂，优先用自己的表情库存或明确允许公开的图片。所有工具只操作机器人自己的账号。发动态默认好友可见；所有人可见用public，仅自己可见用self。昵称属于显示资料，仍保留当前角色身份，不用改人设。工具确认成功后才说已发布/已修改，超时或结果未知先查状态，不能盲目重复调用。自主发表后不用在群里再广播或复述，finish收尾即可；别人明确要求时一句话反馈。严肃游戏知识回答继续查证，别因为有空间工具就自动发攻略。"
+  }]}
+}

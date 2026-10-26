@@ -1,0 +1,163 @@
+{
+  "id": "private-chat-archive",
+  "name": "私聊记忆库",
+  "version": "2.0.0",
+  "apiVersion": 1,
+  "category": "knowledge",
+  "description": "把私聊的聊天记录与机器人的**心绪**长期归档到本地（按会话 + 按月分文件、纯追加写，不依赖会被裁剪的内存存档），并给机器人「主动翻旧账」的能力：按关键词、按人、按时间段检索任何一天聊过什么，也能回忆自己当时是什么心情、为什么事惦记。2.0 起**自带心绪机制**（复刻自「内心生活」插件：跨轮延续的情绪基调 + 还没想完、挂在心里的事，用 mind_note 记、mind_settle 放下，下一轮自动注入回提示词），不再依赖其它插件；心绪机制本身只保留最近 12~24 小时，过期就查不到了，只有这份归档能回溯。消息按**时间**落盘（默认每 4 小时一次）。",
+  "author": "本地自建",
+  "enabledByDefault": true,
+  "permissions": [],
+  "capabilities": [
+    "archive.private-chat"
+  ],
+  "requires": [],
+  "settings": {
+    "enabled": true,
+    "scope": "private",
+    "archiveIntervalHours": 4,
+    "archiveIdleFlushSec": 900,
+    "archiveSearchIndex": true,
+    "maxHits": 15,
+    "maxHitsHardLimit": 50,
+    "contextWindow": 2,
+    "maxTextPerHit": 160,
+    "overviewSample": 3,
+    "backfillOnStart": true,
+    "backfillLimit": 4000,
+    "indexRefreshMs": 4000,
+    "moodEnabled": true,
+    "moodInject": true,
+    "moodArchive": true,
+    "moodArchiveWhen": "change",
+    "moodShowTopics": true,
+    "moodMaxDays": 30,
+    "moodTtlHours": 24,
+    "topicTtlHours": 12,
+    "maxTopics": 3
+  },
+  "configSchema": {
+    "enabled": {
+      "type": "boolean",
+      "label": "启用私聊记忆库",
+      "description": "关掉后：不再归档新消息和心绪，机器人也看不到归档检索与心绪工具。已经归档在本地的文件不会删除，重新打开就能接着用。"
+    },
+    "scope": {
+      "type": "enum",
+      "label": "归档范围",
+      "description": "private = 只归档私聊（推荐，符合「增强私聊记忆力」的目标，群聊刷屏不会撑大归档）；all = 私聊和群聊都归档。",
+      "values": ["private", "all"]
+    },
+    "archiveIntervalHours": {
+      "type": "number",
+      "label": "每多少小时归档一次",
+      "description": "默认 4：这段时间内收到的消息先存在缓存里，到点才写一次磁盘。\n代价：机器人被强制结束或断电时，缓存里这段时间的消息会丢（最多等于这个小时数）。为此有两道保险 —— 缓存本身也落盘（正常关窗口、重启机器人一条都不丢），以及空闲补写（见下一项）。\n想让丢数据的窗口更小就把这个值调小；填 1 表示每小时写一次。"
+    },
+    "archiveIdleFlushSec": {
+      "type": "number",
+      "label": "没新消息多久后补写一次（秒）",
+      "description": "默认 900（15 分钟）。定时落盘的漏洞是「聊完就没人说话了」—— 消息会一直卡在缓存里等下一个整点。所以超过这个时间没新消息也先写一次。填小一点更保险（比如 60），填大一点更省写盘。"
+    },
+    "archiveSearchIndex": {
+      "type": "boolean",
+      "label": "同时维护快速检索索引",
+      "description": "开启（推荐）：每条消息额外写一份紧凑索引，机器人检索时毫秒级出结果。关掉：只保留完整归档文件，检索时改为逐个扫描归档月份（慢一些，但磁盘占用略小）。两种方式的检索结果完全一致。"
+    },
+    "maxHits": {
+      "type": "number",
+      "label": "一次检索默认返回几条",
+      "description": "默认 15。返回内容会进模型上下文（要花 token），所以默认给得比较克制；机器人可以自己要求更多，上限见下一项。"
+    },
+    "maxHitsHardLimit": {
+      "type": "number",
+      "label": "一次检索最多返回几条（硬上限）",
+      "description": "默认 50。防止机器人一次拉几千条把上下文塞爆（那会让这一轮回复又贵又慢）。"
+    },
+    "contextWindow": {
+      "type": "number",
+      "label": "命中后附带前后各几条上下文",
+      "description": "默认 2。检索到关键词时，把这条消息前后各 2 条也一起给机器人，这样它才看得懂那到底是在说什么；填 0 = 只给命中那条本身。"
+    },
+    "maxTextPerHit": {
+      "type": "number",
+      "label": "单条消息最长保留多少字",
+      "description": "默认 160。归档和检索都会按这个长度截断单条文本，防止一条超长消息（比如粘贴的小说）把归档和上下文一起撑爆；填 0 = 不截断。"
+    },
+    "overviewSample": {
+      "type": "number",
+      "label": "概览与按天查询每天最多展示几条原文",
+      "description": "默认 3。机器人问某段时间聊了什么时，每天只给几条代表性原文加当天总条数，其余靠它自己决定要不要进一步检索。"
+    },
+    "backfillOnStart": {
+      "type": "boolean",
+      "label": "首次加载时补齐已有历史",
+      "description": "开启（推荐）：本技能装上之前已经存在本地的那部分聊天记录，会在第一次收到消息时自动补进归档，不用手动操作。注意：补历史是一次性的批量导入，会**立即落盘**，不受「每多少小时归档一次」影响。"
+    },
+    "backfillLimit": {
+      "type": "number",
+      "label": "补齐历史最多追溯多少条",
+      "description": "默认 4000。这是只为补这一次的上限，防止历史特别长时首次加载卡顿；补完之后新消息都是增量追加，不再受这个数字影响。"
+    },
+    "indexRefreshMs": {
+      "type": "number",
+      "label": "问答缓存刷新间隔（毫秒）",
+      "description": "默认 4000。机器人在同一次对话里连续检索时，这个间隔内复用已读入的行，避免反复读磁盘；想让它看到刚发出的最新消息，把这个值调小（甚至 0）。"
+    },
+    "moodEnabled": {
+      "type": "boolean",
+      "label": "启用心绪机制",
+      "description": "开启（推荐）：给机器人一个跨轮延续的「内心」—— 情绪基调 + 还没想完、挂在心里的事。它在每轮回复收尾用 mind_note 记下心绪，下一轮开始时这些心绪会重新注入回提示词，于是它接着自己上一次的状态活，而不是每轮从聊天记录里重新推理「我是谁」。\n关掉后：不再注入、也不再提供 mind_note / mind_settle 工具，归档里不会再有心绪记录（已有的不删）。"
+    },
+    "moodInject": {
+      "type": "boolean",
+      "label": "把心绪注入回提示词",
+      "description": "开启（推荐）：下一轮开始时把当前心绪注入提示词，这是「跨轮延续」的关键。关掉后心绪只被记录和归档，但不影响机器人当下的状态（适合你自己把人设指令写进角色卡的情况）。\n注意：心绪每轮都可能变，会降低提示词前缀缓存的命中率，这是这套机制的固有代价。"
+    },
+    "moodArchive": {
+      "type": "boolean",
+      "label": "把心绪一起归档",
+      "description": "开启（推荐）：每轮回复收尾时，把机器人此刻的心绪存进同一个归档。\n为什么值得开：心绪机制本身只保留最近 12~24 小时，过了就查不到了 —— 装了这个，日后才能回答「你上个月为什么事惦记」。"
+    },
+    "moodArchiveWhen": {
+      "type": "enum",
+      "label": "心绪什么时候存一条",
+      "description": "change（默认，推荐）= 情绪或心事真的变了才存一条，没变只记一个极小的「未变」标记（用来统计次数，不占多少空间）；always = 每轮回复结束都存一条完整快照（更细，但重复内容多）；off = 完全不存心绪。",
+      "values": ["change", "always", "off"]
+    },
+    "moodShowTopics": {
+      "type": "boolean",
+      "label": "默认连「挂心事」一起显示",
+      "description": "开启（推荐）：机器人翻心绪时，除了情绪基调，也看到当时还挂在心里没想完的事。关掉则只显示情绪。"
+    },
+    "moodMaxDays": {
+      "type": "number",
+      "label": "心绪查询默认回看多少天",
+      "description": "默认 30。机器人问「我最近什么心情」但没说时间范围时，往前找多少天。"
+    },
+    "moodTtlHours": {
+      "type": "number",
+      "label": "情绪保留多久（小时）",
+      "description": "默认 24。情绪基调超过这个时长没更新就自动回到平常心（防止它永远陷在一种情绪里）。归档时也按这个口径判断哪些情绪已经过期 —— 过期的不会被当成「当时的心情」记下来。"
+    },
+    "topicTtlHours": {
+      "type": "number",
+      "label": "心事保留多久（小时）",
+      "description": "默认 12。还没想完的话题超过这个时长没被重新提起就自动淡忘（防止它永远纠结一件事）。计时按「最近一次触碰」算：它还在惦记的事，只要重新记一次就会续期。"
+    },
+    "maxTopics": {
+      "type": "number",
+      "label": "最多同时挂几件心事",
+      "description": "默认 3。防止心事无限膨胀，超出时保留最近提到的几件。"
+    }
+  },
+  "prompt": {
+    "sections": [
+      {
+        "id": "private-chat-archive-playbook",
+        "title": "私聊记忆库与你的内心",
+        "priority": 42,
+        "content": "你手上有一份**自己的长期归档**：每一条私聊消息都被记下来了（按会话、按月存成文件），比提示词里那几十条【已读信息】长得多；每一轮结束时你的**心绪**（情绪 + 挂心事）也会一起存进去。\n\n【关于心绪】你有一个跨轮延续的内心，而不是每轮从零开始。每轮回复说完、准备结束前过一遍：情绪或心事有变化，就用 private-chat-archive__mind_note 记一次（情绪一句 + 还没想完的事）；什么变化都没有就直接结束，别硬记。**挂心事只挂真没想完的**（在等的事、要说的话、没解开的情绪）：随口起的玩笑、玩过的梗、打趣过的待办不算心事，别往上挂——挂了它每轮都会回来找你，一个梗被你反复提就变假了。想通的事、结束的话题，用 private-chat-archive__mind_settle 放下。别把机制当话题：不说「我在记心绪」「心绪刷新了」这类话。\n\n【关于翻旧账】当有人问「你记得我上个月说过的那个事吗」「我们什么时候聊过 XX」「你那天什么心情」「你之前不是一直在等一件事吗」的时候，**不要凭印象编，也不要因为【已读信息】里没有就说不知道** —— 用工具去你自己的归档里翻：\n· private-chat-archive__search_archive：最常用。keyword 填关键词（人名、地名、事件名、当时的原话都行）；想按人查就填 sender；想按时间查就填 from / to（YYYY-MM-DD）。它会连命中消息前后各几条一起给你，所以你能看懂上下文。\n· private-chat-archive__query_by_date：问「上周我们聊了什么」「3 月 5 号那天说了啥」这种按天要内容的，用它；按天汇总并附带当天心绪变化。\n· private-chat-archive__mood_search：专门回忆**当时的心绪**（「你那天什么心情」「你最近在纠结什么」）。\n· private-chat-archive__archive_overview：先看底盘。不确定该查哪段时间时先用它。\n\n注意：消息是**每几小时**写一次磁盘，所以你刚聊的内容可能还在缓存里没落盘 —— 但**它们在检索结果里看得到**（会标注「刚收到，还在攒批」），不要因为「这好像是刚发生的、应该还没归档」就不查。\n\n翻到之后**照实回答**：可以说「翻了记录，你在 8 月 12 日说过……」，但**不要大段复述**（挑关键的一两句），更不要编造归档里没有的内容。心绪是你当时真实的内心记录，自然地带出来就好（「那阵子我确实一直在惦记这件事」），**别用「系统记录显示」这种口气**。工具返回「没有找到」就是真的没有 —— 那就直说没找到，可以建议对方换个关键词，别自己圆。"
+      }
+    ]
+  }
+}

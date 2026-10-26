@@ -1,0 +1,42 @@
+{
+  "id": "burst-merge",
+  "name": "连发合并（等他说完再一起看）",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "category": "utility",
+  "author": "QQ Agent + DSH",
+  "description": "同一个群友一次发好几条消息时，不再拆成好几次运行：他还在说话就把响应倒计时往后推，直到他停下（或到封顶）再把这些消息一起交给模型看。判定规则能写死，属于确定性型插件；关掉它就回到原来的固定窗口行为。",
+  "entry": "index.js",
+  "enabledByDefault": true,
+  "permissions": [],
+  "capabilities": [
+    "wake.burst-policy"
+  ],
+  "requires": [],
+  "settings": {
+    "enabled": true,
+    "capMs": "8000"
+  },
+  "configSchema": {
+    "enabled": {
+      "type": "boolean",
+      "group": "总开关",
+      "label": "启用连发合并",
+      "description": "关掉后立刻回到固定窗口：下一条消息按设置页的「防抖聚批窗口」到点就响应。"
+    },
+    "capMs": {
+      "type": "enum",
+      "group": "总开关",
+      "values": ["4000", "6000", "8000", "12000", "0"],
+      "options": [
+        { "value": "4000", "label": "最多等 4 秒（回得快）" },
+        { "value": "6000", "label": "最多等 6 秒" },
+        { "value": "8000", "label": "最多等 8 秒（推荐）" },
+        { "value": "12000", "label": "最多等 12 秒（收集得最完整）" },
+        { "value": "0", "label": "关闭合并" }
+      ],
+      "label": "连发最长等待",
+      "description": "从第一个人开话算起最多等这么久，到点立刻响应；他中途停下超过一个防抖窗口也会提前响应。"
+    }
+  }
+}

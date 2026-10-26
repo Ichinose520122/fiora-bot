@@ -1,0 +1,17 @@
+node_modules/
+data/
+data-*/
+.env
+.env.*
+!.env.example
+community.key
+*.log
+*.lock
+!pnpm-lock.yaml
+runtime/
+coverage/
+*.zip
+*.tar
+*.exe
+*.bak
+.DS_Store

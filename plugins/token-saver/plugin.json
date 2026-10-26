@@ -1,0 +1,73 @@
+{
+  "id": "token-saver",
+  "name": "Token 节流",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "category": "utility",
+  "description": "在不改变机器人对话逻辑的前提下，从每一次请求里省 token：① 历史消息滑窗裁剪，超出部分压成一行摘要；② 工具列表瘦身，按场景屏蔽本轮用不上的工具描述（工具描述每轮都要重发，是持续的固定开销）；③ 截断过长工具结果，避免同一段长文本反复重发。全程只做减法，任何一步出错都静默放行，绝不因为省 token 导致回复发不出去。",
+  "author": "QQ Agent",
+  "entry": "index.js",
+  "permissions": [],
+  "enabledByDefault": true,
+  "capabilities": [
+    "llm.request-params"
+  ],
+  "settings": {
+    "enabled": true,
+    "historyMode": "window",
+    "keepRecentMessages": 14,
+    "maxDigestChars": 600,
+    "trimToolDescriptions": true,
+    "maxToolResultChars": 4000,
+    "verbose": false
+  },
+  "configSchema": {
+    "enabled": {
+      "type": "boolean",
+      "title": "启用节省",
+      "description": "总开关。关闭后本插件完全不做任何修改，行为与未安装时一致。"
+    },
+    "historyMode": {
+      "type": "select",
+      "title": "历史消息处理",
+      "description": "off=不处理；window=保留最近若干条、更早的压成一行摘要（推荐）；aggressive=更激进地压缩较早内容。",
+      "options": [
+        "off",
+        "window",
+        "aggressive"
+      ]
+    },
+    "keepRecentMessages": {
+      "type": "number",
+      "title": "保留最近消息条数",
+      "description": "滑窗保留的条数。调小更省 token，但机器人更容易忘掉较早的细节。建议 10~20。",
+      "min": 4,
+      "max": 60
+    },
+    "maxDigestChars": {
+      "type": "number",
+      "title": "历���摘要字数上限",
+      "description": "被压缩掉的较早内容最多保留多少字作为摘要。调小更省，调大会话连续性更好。",
+      "min": 100,
+      "max": 4000
+    },
+    "trimToolDescriptions": {
+      "type": "boolean",
+      "title": "工具描述瘦身",
+      "description": "裁掉工具描述里的冗余修饰。工具描述每一轮请求都要重发，这项省的是持续开销；关闭后完全不碰工具列表。"
+    },
+    "maxToolResultChars": {
+      "type": "number",
+      "title": "工具结果字数上限",
+      "description": "单次工具返回的文本超过此长度时截断（超出部分标注省略）。避免长搜索结果在后续每一轮里被反复重发。",
+      "min": 500,
+      "max": 40000
+    },
+    "verbose": {
+      "type": "boolean",
+      "title": "输出节省日志",
+      "description": "开启后在控制台打印每次具体省了多少字符，便于确认效果和调参。"
+    }
+  },
+  "prompt": null
+}

@@ -1,0 +1,21 @@
+{
+  "id": "extension-manager",
+  "name": "技能/插件删除按钮",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "category": "utility",
+  "description": "给控制台「技能」/「插件」页的每张卡片装一颗 🗑 删除按钮：目录移到 data/removed-extensions/ 备份（可恢复、不硬删），并清掉它的开关与设置。纯插件实现，不改应用本体；应用更新后自己把界面重新挂回去。两种页面都支持：原版卡片，以及「深海女仆工坊」主题的右侧详情面板。",
+  "author": "本机自建（按你的需求生成）",
+  "enabledByDefault": true,
+  "requires": [],
+  "capabilities": [],
+  "settings": {},
+  "configSchema": {
+    "remove": {
+      "type": "action",
+      "label": "删除动作（由卡片上的 🗑 调用，这里不用填）",
+      "action": "说明",
+      "description": "这是卡片上那颗 🗑 按钮要用的动作入口：页面把 { id, kind } 发到 POST /api/skills/extension-manager/action/remove，由插件在主进程里把目录移进备份目录。宿主规定「只有写在 configSchema 里、且 type 为 action 的键才能被页面调用」，所以它必须出现在这个表单里 —— 这一项没有可填的值，忽略即可。"
+    }
+  }
+}
