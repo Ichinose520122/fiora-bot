@@ -219,7 +219,7 @@ export const DEFAULT_CONFIG = {
     byLengthMs: 20,         // 按字数附加的间隔（毫秒/字）
     maxPerMinute: 80,
     maxPerHour: 500,
-    hardSplitAt: 4000,      // QQ 硬限制切分（0 = 不限制）
+    hardSplitAt: 4000,      // 文本分段偏好（0 = 不主动分段；仍受平台硬上限约束）
     // 发送去重窗口（毫秒）：同一会话在该窗口内完全相同的文本只发一次。
     // 防"模型重复调用 send_message / OneBot 超时看似失败但实际已发出、上层重试再发"导致的重复发言。
     // 0 = 关闭去重。默认 8000（8 秒）。

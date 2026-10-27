@@ -138,7 +138,11 @@ export class SendQueue {
     if (kind !== 'group' && kind !== 'private') throw new Error(`非法会话 key：${chatKey}`);
     const list = Array.isArray(messages) ? messages : [messages];
     if (!list.length) throw new Error('消息列表为空');
-    const hardSplitAt = Number(getConfig().send?.hardSplitAt) || 0;
+    const configuredMax = Number(getConfig().send?.hardSplitAt);
+    const platformMax = Number(this.onebot.maxTextLength);
+    // 平台上限不能被旧配置（4000 / 0）关闭；OneBot 未声明能力时保持原配置语义。
+    const limits = [configuredMax, platformMax].filter((n) => Number.isFinite(n) && n >= 1);
+    const hardSplitAt = limits.length ? Math.min(...limits) : 0;
     const parts = [];
     for (const m of list) {
       const plain = mdToPlain(String(m ?? ''));
@@ -146,22 +150,27 @@ export class SendQueue {
       // 最后防线：任何上游畸形路径漏下来的 "[object Object]" 到这儿直接拦掉，
       // 用户永远不该在 QQ 里看到这串字符。全被拦 → 下方抛"消息内容为空"回给模型。
       if (/^\[object Object\]$/.test(plain)) continue;
-      if (hardSplitAt > 0 && plain.length > hardSplitAt) parts.push(...splitForQQ(plain, hardSplitAt));
-      else parts.push(plain);
+      const chunks = typeof this.onebot.splitText === 'function'
+        ? this.onebot.splitText(plain, hardSplitAt)
+        : (hardSplitAt > 0 && plain.length > hardSplitAt ? splitForQQ(plain, hardSplitAt) : [plain]);
+      // 去重按原消息判断，不能把同一条长消息中内容相同的分段误判为重发。
+      const original = { text: plain, duplicate: null, successes: 0, count: chunks.length };
+      parts.push(...chunks.map((text) => ({ text, original })));
     }
     if (!parts.length) throw new Error('消息内容为空');
 
     const chain = this.#chain(chatKey);
     const promises = [];
     for (let i = 0; i < parts.length; i++) {
-      const text = parts[i];
+      const { text, original } = parts[i];
       const isLast = i === parts.length - 1;
       const gap = this.#gap(text, isLast);
       promises.push(chain(async () => {
         this.#checkRate(chatKey);
         if (gap > 0) await sleep(gap);
         // 发送去重：窗口期内 identical 文本跳过（防模型重复调用/超时重试造成的重复发言）
-        if (this.#isDuplicate(chatKey, text)) {
+        if (original.duplicate === null) original.duplicate = this.#isDuplicate(chatKey, original.text);
+        if (original.duplicate) {
           console.warn(`[sender] 跳过重复消息（${this.#dedupeWindow()}ms 内已发过相同内容）：${String(text).slice(0, 30)}`);
           return { text, messageId: null, at: formatClockTime(Date.now()), deduped: true };
         }
@@ -169,7 +178,9 @@ export class SendQueue {
           replyToMessageId: i === 0 ? options.replyToMessageId : null, // 引用挂在第一条上：回的就是那条
           atUserId: i === 0 ? options.atUserId : null
         });
-        this.#markSent(chatKey, text);   // 只有 OneBot 成功返回后才记入去重窗口
+        original.successes++;
+        // 部分失败不能把整条原消息记成已发送，否则合法重试会被静默跳过。
+        if (original.successes === original.count) this.#markSent(chatKey, original.text);
         const ts = Date.now();
         this.store.appendSelf(chatKey, { text, ts, mid: data?.message_id ?? null });
         this.onSent?.({ chatKey, text, messageId: data?.message_id ?? null });
@@ -185,7 +196,7 @@ export class SendQueue {
       if (r.status === 'fulfilled') sent.push(r.value);
       // 带上 index 和原文：调用方需要知道"哪一条"失败了（才能重发或告知模型）。
       // 原先 failed 里只有 error，没有任何定位信息。
-      else failed.push({ index: i, text: parts[i], error: String(r.reason?.message ?? r.reason) });
+      else failed.push({ index: i, text: parts[i].text, error: String(r.reason?.message ?? r.reason) });
     }
     // 部分成功也要让调用方知道：原先只在"全败"时抛错，部分成功会静默丢消息
     if (failed.length > 0) {

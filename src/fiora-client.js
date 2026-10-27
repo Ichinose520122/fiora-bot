@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { splitForFiora } from './md-to-plain.js';
 
 function getFriendId(userId1, userId2) {
   if (userId1 < userId2) return userId1 + userId2;
@@ -12,6 +13,7 @@ function getFriendId(userId1, userId2) {
 export class FioraClient {
   constructor({ url, apiKey, onEvent, log = console.log }) {
     this.platform = 'fiora';
+    this.maxTextLength = 2048; // Fiora 按 String.length 校验文本长度（UTF-16 码元）。
     this.siteUrl = String(url || '').replace(/\/+$/, '');
     this.apiKey = String(apiKey || '').trim();
     this.onEvent = onEvent || (() => {});
@@ -649,10 +651,31 @@ export class FioraClient {
     return this.sendRaw(conversationId, text, 'text');
   }
 
-  /**
-   * 基础消息发送：通过 WebSocket 实时上报（网络异常时带 HTTP 回退）
-   */
+  /** 供发送队列与直接调用共用的 Fiora 文本分段规则。 */
+  splitText(content, max = this.maxTextLength) {
+    return splitForFiora(content, Math.min(max, this.maxTextLength));
+  }
+
+  /** 基础消息发送：通过 WebSocket 实时上报（网络异常时带 HTTP 回退）。 */
   async sendRaw(conversationId, content, type = 'text') {
+    const parts = type === 'text' ? this.splitText(content) : [content];
+    if (parts.length <= 1) return this.#sendRawMessage(conversationId, parts[0] ?? '', type);
+
+    const sent = [];
+    for (const part of parts) {
+      try {
+        const receipt = await this.#sendRawMessage(conversationId, part, type);
+        sent.push({ content: part, message_id: receipt.message_id });
+      } catch (error) {
+        // 已成功的分段保留回执；停止后续发送，不自动重发整段造成重复。
+        error.sent = sent;
+        throw error;
+      }
+    }
+    return { message_id: sent.at(-1).message_id, sent };
+  }
+
+  async #sendRawMessage(conversationId, content, type) {
     const requestId = crypto.randomUUID();
 
     if (!this.connected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
