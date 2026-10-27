@@ -53,6 +53,10 @@ function decodeHtml(s) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
+    .replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (match, value) => {
+      const point = value[0].toLowerCase() === 'x' ? parseInt(value.slice(1), 16) : parseInt(value, 10);
+      return point <= 0x10ffff ? String.fromCodePoint(point) : match;
+    })
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -66,31 +70,73 @@ function decodeHtml(s) {
 async function fetchBingoResults(searchUrl, query, maxResults) {
   const url = new URL(searchUrl);
   url.searchParams.set('q', query);
-  const res = await fetch(url, {
-    headers: {
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-      'accept-language': 'zh-CN,zh;q=0.9'
-    },
-    signal: AbortSignal.timeout(15000)
-  });
-  if (!res.ok) throw new Error(`搜索服务 HTTP ${res.status}`);
-  const html = await res.text();
-  return parseBingResults(html, maxResults);
+  const candidates = [url];
+  // Some server regions are redirected from cn.bing.com/search to Bing's homepage.
+  // Retry only the official China endpoint; custom services keep their configured destination.
+  if (url.hostname === 'cn.bing.com' && /^\/search\/?$/.test(url.pathname)) {
+    const globalUrl = new URL(url);
+    globalUrl.hostname = 'www.bing.com';
+    candidates.push(globalUrl);
+  }
+  for (let index = 0; index < candidates.length; index++) {
+    try {
+      const res = await fetch(candidates[index], {
+        headers: {
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+          'accept-language': 'zh-CN,zh;q=0.9'
+        },
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!res.ok) throw new Error(`搜索服务 HTTP ${res.status}`);
+      const results = parseBingResults(await res.text(), maxResults);
+      if (results.length) return results;
+      const finalUrl = new URL(res.url || candidates[index]);
+      if ((finalUrl.hostname === 'bing.com' || finalUrl.hostname.endsWith('.bing.com')) && finalUrl.pathname === '/') {
+        throw new Error('Bing 搜索被重定向到首页，没有返回搜索结果；请检查搜索地址或更换搜索提供方');
+      }
+      throw new Error('搜索没有解析到结果（引擎页面结构可能已改版或需要验证）');
+    } catch (error) {
+      if (index === candidates.length - 1) throw error;
+    }
+  }
+}
+
+function articleUrl(href) {
+  try {
+    const url = new URL(decodeHtml(href));
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
+    if ((url.hostname === 'bing.com' || url.hostname.endsWith('.bing.com')) && url.pathname === '/ck/a') {
+      const encoded = url.searchParams.get('u') || '';
+      if (encoded.startsWith('a1')) {
+        const target = new URL(Buffer.from(encoded.slice(2), 'base64url').toString('utf8'));
+        if (['http:', 'https:'].includes(target.protocol)) return target.href;
+      }
+    }
+    return url.href;
+  } catch {
+    return '';
+  }
 }
 
 /** 从 Bing HTML 里解析 b_algo 块（纯函数，测试可直接驱动）。 */
 export function parseBingResults(html, maxResults = 6) {
   const results = [];
-  for (const block of String(html ?? '').split('<li class="b_algo"').slice(1)) {
-    const hrefMatch = block.match(/<a[^>]+href="(https?:\/\/[^"]+)"/i);
-    if (!hrefMatch) continue;
-    const urlStr = decodeHtml(hrefMatch[1]);
+  const seen = new Set();
+  const limit = Math.max(1, Math.min(10, Number(maxResults) || 6));
+  const blocks = String(html ?? '').split(/<li\b[^>]*\bclass\s*=\s*["'][^"']*\bb_algo\b[^"']*["'][^>]*>/i).slice(1);
+  for (const block of blocks) {
     const titleMatch = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+    const hrefMatch = titleMatch?.[1].match(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']/i);
+    if (!hrefMatch) continue;
+    const urlStr = articleUrl(hrefMatch[1]);
     const title = titleMatch ? decodeHtml(titleMatch[1]) : '';
     const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
     const snippet = snippetMatch ? decodeHtml(snippetMatch[1]) : '';
-    if (urlStr && title) results.push({ title, url: urlStr, snippet });
-    if (results.length >= maxResults) break;
+    if (urlStr && title && !seen.has(urlStr)) {
+      seen.add(urlStr);
+      results.push({ title, url: urlStr, snippet });
+    }
+    if (results.length >= limit) break;
   }
   return results;
 }
@@ -98,7 +144,7 @@ export function parseBingResults(html, maxResults = 6) {
 /** Bing 搜索（解析 b_algo 结果块）。searchUrl 可在配置中替换（测试/换引擎）。 */
 export async function bingSearch(query) {
   const cfg = getConfig().webSearch ?? {};
-  const searchUrl = String(cfg.searchUrl || 'https://cn.bing.com/search');
+  const searchUrl = String(cfg.searchUrl || 'https://www.bing.com/search');
   const maxResults = Math.max(1, Math.min(10, Number(cfg.maxResults) || 6));
   const results = await fetchBingoResults(searchUrl, sanitizeQuery(query), maxResults);
   if (!results.length) throw new Error('搜索没有解析到结果（引擎页面结构可能已改版）');
@@ -415,7 +461,7 @@ export async function customSearch(query, providerId = null) {
 /** 用指定 URL 跑一次 Bing 结果解析（供自定义 bing 类型复用，与主搜索共用同一实现）。 */
 async function bingSearchWithUrl(query, searchUrl) {
   const cfg = getConfig().webSearch ?? {};
-  const url = String(searchUrl || cfg.searchUrl || 'https://cn.bing.com/search');
+  const url = String(searchUrl || cfg.searchUrl || 'https://www.bing.com/search');
   const maxResults = Math.max(1, Math.min(10, Number(cfg.maxResults) || 6));
   const results = await fetchBingoResults(url, query, maxResults)
     .catch((error) => { throw new Error(`自定义搜索（bing 类型）：${error?.message ?? error}`); });

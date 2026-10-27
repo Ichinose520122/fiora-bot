@@ -98,7 +98,7 @@ export const DEFAULT_CONFIG = {
   // 联网搜索（默认 Bing 网页解析，无需 key；可选 DeepSeek/智谱/博查/百度/秘塔）
   webSearch: {
     enabled: true,
-    searchUrl: 'https://cn.bing.com/search',
+    searchUrl: 'https://www.bing.com/search',
     maxResults: 6,
     // 可选：'bing' | 'deepseek' | 'zhipu' | 'bocha' | 'baidu' | 'metaso'
     provider: 'bing',

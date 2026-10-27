@@ -1323,7 +1323,7 @@ async function saveConfig({ quiet = false } = {}) {
       ...(c.webSearch || {}),
       enabled: chk('#cfg-websearch', c.webSearch?.enabled !== false),
       provider: val('#cfg-searchprovider', c.webSearch?.provider || 'bing'),
-      searchUrl: val('#cfg-searchurl', c.webSearch?.searchUrl || 'https://cn.bing.com/search').trim() || 'https://cn.bing.com/search',
+      searchUrl: val('#cfg-searchurl', c.webSearch?.searchUrl || 'https://www.bing.com/search').trim() || 'https://www.bing.com/search',
       deepseek: {
         ...(c.webSearch?.deepseek || {}),
         ...(enteredDsKey && enteredDsKey !== '******' ? { apiKey: enteredDsKey } : {}),
