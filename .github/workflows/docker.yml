@@ -56,7 +56,7 @@ jobs:
       - name: Check host bind mounts, startup, persistence and graceful shutdown
         run: |
           image=ghcr.io/ichinose520122/fiora-bot:latest
-          docker run --rm --entrypoint node "$image" -p 'process.version'
+          docker run --rm --entrypoint node "$image" -e "if (process.env.FIORA_BOT_RUNTIME !== 'docker') throw new Error('Missing Docker runtime metadata'); console.log(process.version)"
           deploy="$RUNNER_TEMP/fiora-bot-smoke"
           mkdir -p "$deploy/scripts"
           cp compose.yaml "$deploy/compose.yaml"

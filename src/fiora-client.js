@@ -5,6 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { splitForFiora } from './md-to-plain.js';
 
+export function getFioraRuntimeHeaders(platform = process.platform, env = process.env) {
+  return {
+    'X-Fiora-Bot-Platform': platform,
+    'X-Fiora-Bot-Runtime': env.FIORA_BOT_RUNTIME === 'docker' ? 'docker' : 'native',
+  };
+}
+
 function getFriendId(userId1, userId2) {
   if (userId1 < userId2) return userId1 + userId2;
   return userId2 + userId1;
@@ -135,6 +142,7 @@ export class FioraClient {
       this.socket = new WebSocket(wsUrl, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
+          ...getFioraRuntimeHeaders(),
         },
       });
     } catch (err) {

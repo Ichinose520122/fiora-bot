@@ -2,10 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import WebSocket, { WebSocketServer } from 'ws';
-import { FioraClient } from '../src/fiora-client.js';
+import { FioraClient, getFioraRuntimeHeaders } from '../src/fiora-client.js';
 
 const groupId = 'c'.repeat(24);
 const botId = 'b'.repeat(24);
+
+test('runtime metadata distinguishes Docker from native bot processes', () => {
+  assert.deepEqual(getFioraRuntimeHeaders('linux', { FIORA_BOT_RUNTIME: 'docker' }), {
+    'X-Fiora-Bot-Platform': 'linux', 'X-Fiora-Bot-Runtime': 'docker',
+  });
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    assert.deepEqual(getFioraRuntimeHeaders(platform, {}), {
+      'X-Fiora-Bot-Platform': platform, 'X-Fiora-Bot-Runtime': 'native',
+    });
+  }
+});
 
 test('FioraClient connects via WebSocket, initializes identity, receives and sends messages and images', async () => {
   const receivedWsFrames = [];
@@ -21,6 +32,8 @@ test('FioraClient connects via WebSocket, initializes identity, receives and sen
     const url = new URL(req.url, 'http://localhost');
     assert.equal(url.pathname, '/api/bot/v1/ws');
     assert.equal(url.searchParams.get('token'), 'test_token');
+    assert.equal(req.headers['x-fiora-bot-platform'], process.platform);
+    assert.equal(req.headers['x-fiora-bot-runtime'], process.env.FIORA_BOT_RUNTIME === 'docker' ? 'docker' : 'native');
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });

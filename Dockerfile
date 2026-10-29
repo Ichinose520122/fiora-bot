@@ -17,6 +17,7 @@ RUN if [ "$INSTALL_FFMPEG" = "true" ]; then \
     fi
 WORKDIR /app
 ENV NODE_ENV=production \
+    FIORA_BOT_RUNTIME=docker \
     QQ_AGENT_DATA_DIR=/app/data \
     QQ_AGENT_HOST=0.0.0.0 \
     QQ_AGENT_PORT=3220 \
